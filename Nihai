@@ -1,0 +1,303 @@
+import tkinter as tk
+from tkinter import messagebox, ttk
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import os
+import networkx as nx
+
+bus_data = []
+line_data = []
+bildirim_var = None
+
+def masaustu_klasor():
+    desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+    output_dir = os.path.join(desktop, "GucAkisiCiktisi")
+    os.makedirs(output_dir, exist_ok=True)
+    return output_dir
+
+def guncelle_bus_tablosu():
+    for i in bus_tree.get_children():
+        bus_tree.delete(i)
+    for idx, row in enumerate(bus_data):
+        bus_tree.insert("", "end", values=row, tags=('oddrow',) if idx%2 else ('evenrow',))
+
+def guncelle_hat_tablosu():
+    for i in hat_tree.get_children():
+        hat_tree.delete(i)
+    for idx, row in enumerate(line_data):
+        hat_tree.insert("", "end", values=row, tags=('oddrow',) if idx%2 else ('evenrow',))
+
+def ekle_bus():
+    try:
+        barano = int(barano_entry.get())
+        gerilim = float(gerilim_entry.get()) if gerilim_entry.get() else None
+        aci = float(aci_entry.get()) if aci_entry.get() else None
+        p_yuk = float(p_yuk_entry.get())
+        q_yuk = float(q_yuk_entry.get())
+        p_uretim = float(p_uretim_entry.get())
+        q_uretim = float(q_uretim_entry.get()) if q_uretim_entry.get() else None
+        q_min = float(q_min_entry.get()) if q_min_entry.get() else None
+        q_max = float(q_max_entry.get()) if q_max_entry.get() else None
+        bus_data.append([barano, gerilim, aci, p_yuk, q_yuk, p_uretim, q_uretim, q_min, q_max])
+        guncelle_bus_tablosu()
+        for entry in [barano_entry, gerilim_entry, aci_entry, p_yuk_entry, q_yuk_entry, p_uretim_entry, q_uretim_entry, q_min_entry, q_max_entry]:
+            entry.delete(0, tk.END)
+    except Exception as e:
+        messagebox.showerror("Hata", f"Veri hatası: {e}")
+
+def ekle_hat():
+    try:
+        f = int(from_entry.get())
+        t = int(to_entry.get())
+        r = float(r_entry.get())
+        x = float(x_entry.get())
+        b = float(b_entry.get())
+        line_data.append([f, t, r, x, b])
+        guncelle_hat_tablosu()
+        for entry in [from_entry, to_entry, r_entry, x_entry, b_entry]:
+            entry.delete(0, tk.END)
+    except Exception as e:
+        messagebox.showerror("Hata", f"Veri hatası: {e}")
+
+def bus_tipleri(df):
+    types = []
+    for _, row in df.iterrows():
+        if not pd.isna(row["Gerilim (V)"]) and not pd.isna(row["Açı (°)"]):
+            types.append("Slack")
+        elif not pd.isna(row["Gerilim (V)"]):
+            types.append("PV")
+        else:
+            types.append("PQ")
+    df["Tip"] = types
+    return df
+
+def ybus_olustur(n, df, baz_gucu=100.0):
+    Y = np.zeros((n, n), dtype=complex)
+    for _, row in df.iterrows():
+        i, j = int(row['Bağlantı Başlangıcı']) - 1, int(row['Bağlantı Sonu']) - 1
+        r, x, b = row['Direnç (R)'], row['Reaktans (X)'], row['B/2']
+        z_pu = complex(r, x) * (1.0 / baz_gucu)
+        y_line = 1 / z_pu
+        b_total = complex(0, b)
+        Y[i, i] += y_line + b_total
+        Y[j, j] += y_line + b_total
+        Y[i, j] -= y_line
+        Y[j, i] -= y_line
+    return Y
+
+def kaydet_matris(matris, dosya_adi):
+    df = pd.DataFrame(matris)
+    df.to_csv(os.path.join(masaustu_klasor(), dosya_adi), index=False, header=False)
+
+def devre_semasi_ciz(bus_data, line_data, bus_types, cikti_klasor):
+    G = nx.Graph()
+    bus_labels = {}
+
+    for idx, row in enumerate(bus_data):
+        barano = int(row[0])
+        label = f"Bara {barano}\n"
+        label += f"{bus_types[idx]} / V={row[1] if row[1] else '-'} / θ={row[2] if row[2] else '-'}\n"
+        label += f"Pyük={row[3]}, Qyük={row[4]}\n"
+        label += f"Püretim={row[5]}"
+        bus_labels[barano] = label
+        G.add_node(barano)
+
+    for row in line_data:
+        f, t, r, x, b = row
+        label = f"R={r}\nX={x}\nB/2={b}"
+        G.add_edge(f, t, label=label)
+
+    pos = nx.spring_layout(G, seed=44)
+    plt.figure(figsize=(9,7))
+    nx.draw(G, pos, with_labels=True, node_size=2200, node_color="#dff9fb", font_size=9, font_weight='bold', edge_color="#30336b")
+    nx.draw_networkx_labels(G, pos, labels=bus_labels, font_size=7)
+    edge_labels = nx.get_edge_attributes(G, 'label')
+    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=8, bbox=dict(boxstyle='round,pad=0.2', fc='white', ec='black', lw=0.5))
+    plt.title("Devre Şeması (Bara & Hatlar)", fontsize=14, fontweight='bold')
+    plt.axis("off")
+    plt.tight_layout()
+    plt.savefig(os.path.join(cikti_klasor, "devre_semasi.png"))
+    plt.close()
+
+def hesapla():
+    global bildirim_var
+    if not bus_data or not line_data:
+        messagebox.showerror("Eksik Veri", "Baralar veya hat verileri eksik.")
+        return
+
+    bus_df = pd.DataFrame(bus_data, columns=[
+        "Barano", "Gerilim (V)", "Açı (°)",
+        "P_yük", "Q_yük", "P_üretim", "Q_üretim", "Q_min", "Q_max"
+    ])
+    line_df = pd.DataFrame(line_data, columns=[
+        "Bağlantı Başlangıcı", "Bağlantı Sonu", "Direnç (R)", "Reaktans (X)", "B/2"
+    ])
+    bus_df = bus_tipleri(bus_df)
+    n = len(bus_df)
+    V = np.ones(n)
+    delta = np.zeros(n)
+    baz_gucu = 100.0  # 100 MVA baz alınır
+
+    for i, row in bus_df.iterrows():
+        if not pd.isna(row["Gerilim (V)"]): V[i] = row["Gerilim (V)"]
+        if not pd.isna(row["Açı (°)"]): delta[i] = np.radians(row["Açı (°)"])
+
+    Y = ybus_olustur(n, line_df, baz_gucu)
+    G, B = Y.real, Y.imag
+
+    # Ybus'u kaydet
+    kaydet_matris(Y, "Ybus.csv")
+
+    iterasyonlar = []
+    loglar = []
+    for iter in range(1, 21):
+        P, Q = np.zeros(n), np.zeros(n)
+        for i in range(n):
+            for j in range(n):
+                angle = delta[i] - delta[j]
+                P[i] += V[i]*V[j]*(G[i,j]*np.cos(angle) + B[i,j]*np.sin(angle))
+                Q[i] += V[i]*V[j]*(G[i,j]*np.sin(angle) - B[i,j]*np.cos(angle))
+
+        dP, dQ = [], []
+        for i in range(n):
+            if bus_df.loc[i, "Tip"] in ["PQ", "PV"]:
+                dP.append(bus_df.loc[i, "P_üretim"] - bus_df.loc[i, "P_yük"] - P[i])
+            if bus_df.loc[i, "Tip"] == "PQ":
+                dQ.append(bus_df.loc[i, "Q_üretim"] - bus_df.loc[i, "Q_yük"] - Q[i])
+
+        max_hata = np.linalg.norm(dP + dQ, np.inf)
+        iterasyonlar.append({
+            "iterasyon": iter,
+            **{f"V{i+1}": V[i] for i in range(n)},
+            **{f"delta{i+1}(deg)": np.degrees(delta[i]) for i in range(n)},
+            "max_hata": max_hata
+        })
+        loglar.append(f"İterasyon {iter}: max hata={max_hata}\nV: {V}\nDelta (deg): {np.degrees(delta)}\n")
+
+        if max_hata < 1e-6:
+            loglar.append(f"Konverjans {iter}. adımda sağlandı.\n")
+            break
+
+        pq_idx = [i for i in range(n) if bus_df.loc[i, "Tip"] == "PQ"]
+        delta[pq_idx] += 0.01
+        V[pq_idx] += 0.01
+
+    # Sonuçları tablo olarak göster
+    result_win = tk.Toplevel(pencere)
+    result_win.title("Sonuçlar")
+    tree = ttk.Treeview(result_win, columns=["Barano", "Gerilim (p.u.)", "Açı (°)"], show="headings")
+    for col in ["Barano", "Gerilim (p.u.)", "Açı (°)"]:
+        tree.heading(col, text=col)
+    tree.pack(fill="both", expand=True)
+    for i in range(n):
+        tree.insert("", "end", values=(i+1, round(V[i],4), round(np.degrees(delta[i]),4)))
+
+    cikti_klasor = masaustu_klasor()
+    sonuc_df = pd.DataFrame({
+        "Barano": [i+1 for i in range(n)],
+        "Gerilim (p.u.)": V.round(4),
+        "Açı (°)": np.degrees(delta).round(4)
+    })
+    sonuc_df.to_excel(os.path.join(cikti_klasor, "sonuc.xlsx"), index=False)
+    iterasyon_df = pd.DataFrame(iterasyonlar)
+    iterasyon_df.to_csv(os.path.join(cikti_klasor, "iterasyonlar.csv"), index=False)
+    with open(os.path.join(cikti_klasor, "log.txt"), "w", encoding="utf-8") as f:
+        for satir in loglar:
+            f.write(satir + "\n")
+
+    # Devre şeması çizimi
+    devre_semasi_ciz(bus_data, line_data, bus_df["Tip"].tolist(), cikti_klasor)
+
+    # Gerilim profili
+    plt.figure()
+    plt.plot(sonuc_df["Barano"], sonuc_df["Gerilim (p.u.)"], marker='o', color="#4c72b0")
+    plt.title("Gerilim Profili", fontsize=14, fontweight="bold")
+    plt.xlabel("Barano", fontsize=12)
+    plt.ylabel("Gerilim (p.u.)", fontsize=12)
+    plt.grid(True, color="#dddddd")
+    plt.tight_layout()
+    plt.savefig(os.path.join(cikti_klasor, "gerilim_profili.png"))
+    plt.close()
+
+    bildirim_text = "Hesaplama tamamlandı.\nTüm çıktılar ve devre şeması masaüstündeki 'GucAkisiCiktisi' klasörüne kaydedildi."
+    messagebox.showinfo("Başarılı", bildirim_text)
+    if bildirim_var is not None:
+        bildirim_var.config(text=bildirim_text, fg="green")
+
+# --- ANA ARAYÜZ ---
+pencere = tk.Tk()
+pencere.title("Güç Akışı Hesaplayıcı")
+pencere.state('zoomed')
+
+header = tk.Label(pencere, text="GÜÇ AKIŞI HESAPLAYICI", font=("Arial", 21, "bold"), fg="#273c75", bg="#f5f6fa")
+header.pack(pady=(15,4))
+
+subheader = tk.Label(pencere, text="Cihan KARATOPRAK 222915032", font=("Arial", 12, "italic"), fg="#353b48", bg="#f5f6fa")
+subheader.pack(pady=(0,10))
+
+frm_bus = tk.LabelFrame(pencere, text="BARA VERİ GİRİŞİ", padx=5, pady=5, bg="#dff9fb", font=("Arial",10,"bold"), fg="#222")
+frm_bus.pack(padx=10, pady=5, fill="x")
+labels1 = ["Barano", "Gerilim (V)", "Açı (°)", "P_yük", "Q_yük"]
+for idx, text in enumerate(labels1):
+    tk.Label(frm_bus, text=text, bg="#dff9fb").grid(row=0, column=idx, padx=2)
+barano_entry = tk.Entry(frm_bus, width=7)
+gerilim_entry = tk.Entry(frm_bus, width=7)
+aci_entry = tk.Entry(frm_bus, width=7)
+p_yuk_entry = tk.Entry(frm_bus, width=7)
+q_yuk_entry = tk.Entry(frm_bus, width=7)
+entry_list1 = [barano_entry, gerilim_entry, aci_entry, p_yuk_entry, q_yuk_entry]
+for idx, entry in enumerate(entry_list1):
+    entry.grid(row=1, column=idx, padx=2)
+labels2 = ["P_üretim", "Q_üretim", "Q_min", "Q_max"]
+for idx, text in enumerate(labels2):
+    tk.Label(frm_bus, text=text, bg="#dff9fb").grid(row=2, column=idx, padx=2)
+p_uretim_entry = tk.Entry(frm_bus, width=7)
+q_uretim_entry = tk.Entry(frm_bus, width=7)
+q_min_entry = tk.Entry(frm_bus, width=7)
+q_max_entry = tk.Entry(frm_bus, width=7)
+entry_list2 = [p_uretim_entry, q_uretim_entry, q_min_entry, q_max_entry]
+for idx, entry in enumerate(entry_list2):
+    entry.grid(row=3, column=idx, padx=2)
+tk.Button(frm_bus, text="Bara Ekle", command=ekle_bus, bg="#00b894", fg="white", font=("Arial",9,"bold")).grid(row=3, column=4, padx=8)
+bus_tree = ttk.Treeview(frm_bus, columns=labels1+labels2, show="headings", height=3)
+for col in labels1+labels2:
+    bus_tree.heading(col, text=col)
+bus_tree.tag_configure('oddrow', background='#f1f2f6')
+bus_tree.tag_configure('evenrow', background='#dff9fb')
+bus_tree.grid(row=4, column=0, columnspan=10, pady=4, sticky="ew")
+frm_hat = tk.LabelFrame(pencere, text="HAT VERİ GİRİŞİ", padx=5, pady=5, bg="#c7ecee", font=("Arial",10,"bold"), fg="#222")
+frm_hat.pack(padx=10, pady=5, fill="x")
+tk.Label(frm_hat, text="Bağlantı Başlangıcı", bg="#c7ecee").grid(row=0, column=0)
+tk.Label(frm_hat, text="Bağlantı Sonu", bg="#c7ecee").grid(row=0, column=1)
+tk.Label(frm_hat, text="Direnç (R)", bg="#c7ecee").grid(row=0, column=2)
+tk.Label(frm_hat, text="Reaktans (X)", bg="#c7ecee").grid(row=0, column=3)
+tk.Label(frm_hat, text="B/2", bg="#c7ecee").grid(row=0, column=4)
+from_entry = tk.Entry(frm_hat, width=7)
+to_entry = tk.Entry(frm_hat, width=7)
+r_entry = tk.Entry(frm_hat, width=7)
+x_entry = tk.Entry(frm_hat, width=7)
+b_entry = tk.Entry(frm_hat, width=7)
+from_entry.grid(row=1, column=0)
+to_entry.grid(row=1, column=1)
+r_entry.grid(row=1, column=2)
+x_entry.grid(row=1, column=3)
+b_entry.grid(row=1, column=4)
+tk.Button(frm_hat, text="Hat Ekle", command=ekle_hat, bg="#00b894", fg="white", font=("Arial",9,"bold")).grid(row=2, column=0, columnspan=6, pady=5)
+hat_tree = ttk.Treeview(frm_hat, columns=[
+    "Bağlantı Başlangıcı", "Bağlantı Sonu", "Direnç (R)", "Reaktans (X)", "B/2"
+], show="headings", height=3)
+for col in ["Bağlantı Başlangıcı", "Bağlantı Sonu", "Direnç (R)", "Reaktans (X)", "B/2"]:
+    hat_tree.heading(col, text=col)
+hat_tree.tag_configure('oddrow', background='#f1f2f6')
+hat_tree.tag_configure('evenrow', background='#c7ecee')
+hat_tree.grid(row=3, column=0, columnspan=6, pady=4, sticky="ew")
+bildirim_var = tk.Label(pencere, text="", font=("Arial", 11), fg="green", bg="#f5f6fa")
+bildirim_var.pack(pady=5)
+tk.Button(
+    pencere,
+    text="GÜÇ AKIŞI HESAPLA",
+    command=hesapla,
+    bg="#30336b", fg="white", font=("Arial", 13, "bold"), padx=18, pady=4
+).pack(pady=20)
+pencere.mainloop()
