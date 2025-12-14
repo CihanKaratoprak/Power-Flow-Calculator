@@ -1,104 +1,33 @@
-Power Flow Analysis GUI
+# Power Flow Analysis GUI (AC/DC) + Short Circuit
 
-A Python-based GUI application for performing Power Flow (Load Flow) calculations in electrical power systems.
-It provides iterative solving, logging of convergence steps, and real-time visualization of the single-line diagram.
+This repository contains the release build of a power systems analysis desktop application developed as an R&D-focused engineering project.
 
-🔑 Key Features
-Power Flow Solver
+## What it does
+The application provides a practical analysis workflow for distribution/power system studies:
+- AC power flow (load flow)
+- DC load flow (optional method)
+- Short-circuit analysis
+- Scenario save/load for comparative study cases
+- Automatic line parameter calculation (R–X) based on conductor selection and line length
 
-Supports iterative methods for bus voltage and power flow calculation
+## Quick install (recommended)
+1. Go to **Releases** (right side of this page).
+2. Download the latest `PowerFlowAnalysis_Setup_*.exe`.
+3. Run the setup and follow the installer steps.
 
-Automatic bus type detection (Slack, PV, PQ)
+> The installer package is distributed with an EULA to protect author rights.
 
-Reactive power limit checks
+## Notes for evaluation
+- This project is maintained with an R&D mindset: correctness, repeatability, and workflow usability are prioritized.
+- Scenario management is included to support engineering comparison studies.
 
-Iteration Log
+## Roadmap
+Planned modules:
+- Reactive power compensation calculations
+- Harmonic analysis / power quality modules
 
-Tracks each iteration step with detailed values (voltages, angles, mismatches)
+## Source code
+For evaluation purposes, the source code is maintained separately (branch: `source-code`).
 
-Displays convergence progress in a structured log
-
-Network Visualization
-
-Interactive single-line diagram drawing
-
-Buses, generators, loads, and transmission lines are represented graphically
-
-GUI Interface
-
-Easy data entry for buses, loads, and lines
-
-One-click calculation and results visualization
-
-🛠 Tech Stack
-
-Language: Python 3.x
-
-GUI: Tkinter / PyQt5
-
-Visualization: Matplotlib, NetworkX
-
-Logging: Standard Python logging system
-
-📦 Installation
-
-Clone this repository:
-
-git clone https://github.com/CihanKaratoprak/power-flow-gui.git
-cd power-flow-gui
-
-
-Install dependencies:
-
-pip install -r requirements.txt
-
-
-Run the application:
-
-python main.py
-
-📂 Project Structure
-.
-├── main.py          # Entry point
-├── gui/             # GUI components
-├── core/            # Power flow algorithms
-├── utils/           # Helper functions (logging, plotting, etc.)
-├── logs/            # Iteration logs
-└── README.md
-
-🖼 Demo
-
-Define buses, lines, and load data
-
-Run the solver
-
-Check the iteration log
-
-View the single-line diagram with power flow results
-
-🤝 Contributing
-
-Contributions are welcome! If you’d like to improve the solver, add new algorithms, or enhance the GUI:
-
-Fork the repo
-
-Create a new branch (feature/my-feature)
-
-Commit your changes
-
-Open a Pull Request
-
-📌 Note
-
-This project was developed individually as part of my work on power system analysis.
-It is not licensed under MIT or any open-source license. All rights are reserved.
-
-📬 Contact
-
-If you have any questions, suggestions, or collaboration ideas, feel free to reach out:
-
-📧 Email: cihankaratoprak0@gmail.com
-
-💼 LinkedIn: https://www.linkedin.com/in/cihan-karatoprak-65b04136a/
-
-🌍 GitHub: CihanKaratoprak
+## Contact
+If you would like a technical walkthrough or a demo build, feel free to reach out via LinkedIn.
